@@ -1,0 +1,66 @@
+// Requirements and dependencies
+var bleno = require('/playpen/node_modules/bleno');
+var fs = require('fs');
+var path = require('path');
+var file = "connections.log"
+var child_process = require('child_process');
+
+var BlenoPrimaryService = bleno.PrimaryService;
+var UptimeCharacteristic = require('./Uptime-characteristic');
+
+// Create an empty log file 
+var fd = fs.openSync(path.join(process.cwd(), file), 'w');
+fs.writeSync(fd, "");
+fs.closeSync(fd);
+
+console.log('bleno - BLEUptime');
+
+// Starts advertizing itself when the peripheral is powered on
+bleno.on('stateChange', function(state) {
+    console.log('on -> stateChange: ' + state);
+
+    if (state === 'poweredOn') {
+        bleno.startAdvertising('BLEUptime', ['0000']);
+    } else {
+        bleno.stopAdvertising();
+    }
+});
+
+// Advertises itself to other devices and sets services and characteristics
+bleno.on('advertisingStart', function(error) {
+    console.log('on -> advertisingStart: ' + (error ? 'error ' + error : 'success'));
+  
+    if (!error) {
+        bleno.setServices([
+            new BlenoPrimaryService({
+                uuid: '0000',
+                characteristics: [
+                    new UptimeCharacteristic()
+                ]
+            })
+        ]);
+    }
+});
+
+// Accepts incoming connections and logs the time and addresses to a file
+bleno.on('accept', function(clientAddress) {
+    console.log("New connection at " + clientAddress);
+
+    // Create the log entry using the client address and current time from linux 
+    // 'date' command 
+    result = child_process.execSync('date');
+    var time = result.toString();
+
+    var logEntry = "Connecting to " + clientAddress + " at " + time;
+
+    // Write entry to a log file
+    var fd = fs.openSync(path.join(process.cwd(), file), 'a');
+    fs.writeSync(fd, logEntry);
+    fs.closeSync(fd)
+});
+
+// When the connection is disconnected, turn the notifications off
+bleno.on('disconnect', function(clientAddress) {
+    console.log("Connection disconnected at " + clientAddress);
+    UptimeCharacteristic.setNotify(0);
+});
